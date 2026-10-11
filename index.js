@@ -1,122 +1,226 @@
+
 const express = require('express');
+const db = require('./config/db');
+require('dotenv').config();
 
 const app = express();
-const PORT = 3000;
-
-// Permite recibir datos en formato JSON
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
-app.use((req, res, next) => {
-    console.log('Método:', req.method);
-    console.log('Content-Type:', req.headers['content-type']);
-    console.log('Body recibido:', req.body);
-    next();
-});
+// 1. GET: consultar todos los recursos
+app.get('/api/recursos', async (req, res) => {
+    try {
+        const [recursos] = await db.query(
+            'SELECT * FROM recursos'
+        );
 
-// Arreglo en memoria
-let productos = [
-    {
-        id: 1,
-        nombre: "Laptop",
-        precio: 15000,
-        categoria: "Tecnología"
-    },
-    {
-        id: 2,
-        nombre: "Mouse",
-        precio: 350,
-        categoria: "Accesorios"
-    },
-    {
-        id: 3,
-        nombre: "Teclado",
-        precio: 700,
-        categoria: "Accesorios"
-    }
-];
-
-// Ruta base
-app.get('/', (req, res) => {
-    res.send('Servidor API REST funcionando correctamente');
-});
-
-// GET - Obtener todos los productos
-app.get('/api/productos', (req, res) => {
-    res.json(productos);
-});
-
-// GET - Obtener un producto por ID
-app.get('/api/productos/:id', (req, res) => {
-    const id = parseInt(req.params.id);
-
-    const producto = productos.find(p => p.id === id);
-
-    if (!producto) {
-        return res.status(404).json({
-            mensaje: 'Producto no encontrado'
+        res.status(200).json(recursos);
+    } catch (error) {
+        console.error('Error al consultar recursos:', error);
+        res.status(500).json({
+            mensaje: 'Error interno del servidor'
         });
     }
-
-    res.json(producto);
 });
 
-// POST - Crear un producto
-app.post('/api/productos', (req, res) => {
-    const nuevoProducto = {
-        id: productos.length > 0 ? productos[productos.length - 1].id + 1 : 1,
-        nombre: req.body.nombre,
-        precio: req.body.precio,
-        categoria: req.body.categoria
-    };
+// 2. GET por ID: consultar un recurso específico
+app.get('/api/recursos/:id', async (req, res) => {
+    try {
+        const id = Number(req.params.id);
 
-    productos.push(nuevoProducto);
+        if (!Number.isInteger(id) || id <= 0) {
+            return res.status(400).json({
+                mensaje: 'El ID debe ser un número positivo'
+            });
+        }
 
-    res.status(201).json(nuevoProducto);
-});
+        const [recursos] = await db.query(
+            'SELECT * FROM recursos WHERE id = ?',
+            [id]
+        );
 
-// PUT - Actualizar un producto
-app.put('/api/productos/:id', (req, res) => {
-    const id = parseInt(req.params.id);
+        if (recursos.length === 0) {
+            return res.status(404).json({
+                mensaje: 'Recurso no encontrado'
+            });
+        }
 
-    const indice = productos.findIndex(p => p.id === id);
-
-    if (indice === -1) {
-        return res.status(404).json({
-            mensaje: 'Producto no encontrado'
+        res.status(200).json(recursos[0]);
+    } catch (error) {
+        console.error('Error al consultar recurso:', error);
+        res.status(500).json({
+            mensaje: 'Error interno del servidor'
         });
     }
-
-    productos[indice] = {
-        id: id,
-        nombre: req.body.nombre,
-        precio: req.body.precio,
-        categoria: req.body.categoria
-    };
-
-    res.json(productos[indice]);
 });
 
-// DELETE - Eliminar un producto
-app.delete('/api/productos/:id', (req, res) => {
-    const id = parseInt(req.params.id);
+// 3. POST: registrar un recurso
+app.post('/api/recursos', async (req, res) => {
+    try {
+        const { nombre, descripcion, cantidad } = req.body;
 
-    const indice = productos.findIndex(p => p.id === id);
+        if (
+            typeof nombre !== 'string' ||
+            nombre.trim() === ''
+        ) {
+            return res.status(400).json({
+                mensaje: 'El nombre es obligatorio'
+            });
+        }
 
-    if (indice === -1) {
-        return res.status(404).json({
-            mensaje: 'Producto no encontrado'
+        if (
+            cantidad !== undefined &&
+            (!Number.isInteger(cantidad) || cantidad < 0)
+        ) {
+            return res.status(400).json({
+                mensaje: 'La cantidad debe ser un entero no negativo'
+            });
+        }
+
+        const [resultado] = await db.query(
+            `INSERT INTO recursos (nombre, descripcion, cantidad)
+             VALUES (?, ?, ?)`,
+            [
+                nombre.trim(),
+                descripcion ?? null,
+                cantidad ?? 0
+            ]
+        );
+
+        const [nuevoRecurso] = await db.query(
+            'SELECT * FROM recursos WHERE id = ?',
+            [resultado.insertId]
+        );
+
+        res.status(201).json(nuevoRecurso[0]);
+    } catch (error) {
+        console.error('Error al registrar recurso:', error);
+        res.status(500).json({
+            mensaje: 'Error interno del servidor'
         });
     }
-
-    productos.splice(indice, 1);
-
-    res.json({
-        mensaje: 'Producto eliminado correctamente'
-    });
 });
 
-// Iniciar servidor
-app.listen(PORT, () => {
-    console.log(`Servidor ejecutándose en http://localhost:${PORT}`);
+// 4. PUT: actualizar un recurso
+app.put('/api/recursos/:id', async (req, res) => {
+    try {
+        const id = Number(req.params.id);
+        const { nombre, descripcion, cantidad } = req.body;
+
+        if (!Number.isInteger(id) || id <= 0) {
+            return res.status(400).json({
+                mensaje: 'El ID debe ser un número positivo'
+            });
+        }
+
+        if (
+            typeof nombre !== 'string' ||
+            nombre.trim() === ''
+        ) {
+            return res.status(400).json({
+                mensaje: 'El nombre es obligatorio'
+            });
+        }
+
+        if (
+            cantidad !== undefined &&
+            (!Number.isInteger(cantidad) || cantidad < 0)
+        ) {
+            return res.status(400).json({
+                mensaje: 'La cantidad debe ser un entero no negativo'
+            });
+        }
+
+        const [existente] = await db.query(
+            'SELECT id FROM recursos WHERE id = ?',
+            [id]
+        );
+
+        if (existente.length === 0) {
+            return res.status(404).json({
+                mensaje: 'Recurso no encontrado'
+            });
+        }
+
+        await db.query(
+            `UPDATE recursos
+             SET nombre = ?, descripcion = ?, cantidad = ?
+             WHERE id = ?`,
+            [
+                nombre.trim(),
+                descripcion ?? null,
+                cantidad ?? 0,
+                id
+            ]
+        );
+
+        const [actualizado] = await db.query(
+            'SELECT * FROM recursos WHERE id = ?',
+            [id]
+        );
+
+        res.status(200).json(actualizado[0]);
+    } catch (error) {
+        console.error('Error al actualizar recurso:', error);
+        res.status(500).json({
+            mensaje: 'Error interno del servidor'
+        });
+    }
 });
+
+// 5. DELETE: eliminar un recurso
+app.delete('/api/recursos/:id', async (req, res) => {
+    try {
+        const id = Number(req.params.id);
+
+        if (!Number.isInteger(id) || id <= 0) {
+            return res.status(400).json({
+                mensaje: 'El ID debe ser un número positivo'
+            });
+        }
+
+        const [resultado] = await db.query(
+            'DELETE FROM recursos WHERE id = ?',
+            [id]
+        );
+
+        if (resultado.affectedRows === 0) {
+            return res.status(404).json({
+                mensaje: 'Recurso no encontrado'
+            });
+        }
+
+        res.status(200).json({
+            mensaje: 'Recurso eliminado correctamente'
+        });
+    } catch (error) {
+        console.error('Error al eliminar recurso:', error);
+        res.status(500).json({
+            mensaje: 'Error interno del servidor'
+        });
+    }
+});
+
+// Iniciar servidor y verificar conexión con MySQL
+async function iniciarServidor() {
+    try {
+        const conexion = await db.getConnection();
+        console.log('Conectado exitosamente a la base de datos');
+        conexion.release();
+
+        const puerto = process.env.PORT || 3000;
+
+        app.listen(puerto, () => {
+            console.log(
+                `Servidor ejecutándose en http://localhost:${puerto}`
+            );
+        });
+    } catch (error) {
+        console.error(
+            'No se pudo conectar a la base de datos:',
+            error.message
+        );
+        process.exit(1);
+    }
+}
+
+iniciarServidor();
